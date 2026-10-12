@@ -55,6 +55,8 @@ import {getFirestore,collection,doc,addDoc,setDoc,getDoc,updateDoc,query,where,o
 var firebaseConfig={apiKey:"AIzaSyC1UlUyDLDRF7iCjISe4MbY00apY3Y6OVk",authDomain:"reconnect-kigali.firebaseapp.com",projectId:"reconnect-kigali",storageBucket:"reconnect-kigali.firebasestorage.app",messagingSenderId:"694458769352",appId:"1:694458769352:web:6ccb95ea3aab80d6236afd"};
 var OWNER_EMAIL="reconnectkigali@gmail.com";
 var CODE="2301609",RECIP="Sandrine";
+// EmailJS: sends the owner an email when a customer presses "I've paid". The public key is meant to be in the page; it can only send through the template below.
+var EJ={service:"service_ag4c63b",template:"template_m0q6m1g",key:"yJULrvAXBYRGiFxvB"};
 var fbApp=initializeApp(firebaseConfig),auth=getAuth(fbApp),db=getFirestore(fbApp);
 
 // price by connection type in this order: Friends, Family, Unfinished relationship, Other (Other uses the Friends price)
@@ -126,6 +128,8 @@ function copy(v,btn,done){function ok(){btn.textContent=done}function fb(){var e
 function isOwner(u){return !!u&&!u.isAnonymous&&u.email===OWNER_EMAIL}
 function stIdx(){return S&&S.status==="confirmed"?2:(S&&S.status==="awaiting_confirmation"?1:0)}
 function chips(){return '<div class="chips">'+t().st.map(function(l,i){return '<span class="chip'+(i===stIdx()?' on'+(i===1?' w':''):'')+'">'+l+'</span>'}).join("")+'</div>'}
+function notifyOwner(b){try{var sv=L.en.svc[b.svc][0],amt=fmt(pr(b.svc,b.conn)),lg=b.lang==="rw"?"Kinyarwanda":"English";
+ fetch("https://api.emailjs.com/api/v1.0/email/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({service_id:EJ.service,template_id:EJ.template,user_id:EJ.key,template_params:{name:b.name,email:OWNER_EMAIL,time:new Date().toLocaleString("en-GB"),title:"PAID - "+b.name+" - "+sv+" - "+amt+" - "+b.ref,message:"Payment request. Name: "+b.name+" | Service: "+sv+" | Amount: "+amt+" | Connection: "+EN_CONN[b.conn]+" | Language: "+lg+" | Reference: "+b.ref+" | Check your phone to confirm the money arrived, then open the Owner area at "+location.origin+location.pathname+" and tap Confirm Payment."}})}).catch(function(){})}catch(e){}}
 function dt(ts){var d=ts&&ts.toDate?ts.toDate():null;return d?d.toLocaleString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}):"just now"}
 
 // ===== customer: live link to their own booking =====
@@ -178,11 +182,11 @@ function ok(){var T=t();if(!UN)return '<div class="card">'+chips()+'<h2>'+T.okH+
 function ologin(){return '<div class="card"><h2>Owner login</h2><p class="sub">Only for the business owner.</p><label for="oe">Email</label><input id="oe" type="email" autocomplete="username" autocapitalize="none" value="'+OWNER_EMAIL+'"><label for="op">Password</label><input id="op" type="password" autocomplete="current-password"><div class="err" role="alert">'+esc(err)+'</div><div class="row"><button class="btn" type="button" data-a="olog">Sign in</button></div><div class="row"><button class="btn g" type="button" data-a="home">Close</button></div></div>'}
 function owner(){return '<div class="card"><h2>Owner area</h2><p class="sub">Signed in as '+esc(user&&user.email)+'. You can approve payments here after you check your own phone.</p>'+
  '<label for="op2">Your WhatsApp / call number <small>(shown only to customers whose payment you confirm)</small></label><input id="op2" type="tel" inputmode="tel" placeholder="+250…" value="'+esc(ownerPhone)+'"><div class="err" id="opm" role="alert"></div><div class="row"><button class="btn g" type="button" data-a="osave">Save number</button></div></div>'+
- '<div class="chips" id="ofil"></div><div id="olist"></div><div class="row"><button class="btn g" type="button" data-a="osignout">Sign out</button></div>'}
+ '<div class="chips" id="ofil"></div><div id="olist"></div><div class="row"><button class="btn g" type="button" data-a="home">← Back to website</button></div><div class="row"><button class="btn g" type="button" data-a="osignout">Sign out</button></div>'}
 var ST={awaiting_payment:"Awaiting Payment",awaiting_confirmation:"Awaiting Payment Confirmation",confirmed:"Confirmed",rejected:"Rejected"};
 function renderList(){var l=document.getElementById("olist"),f=document.getElementById("ofil");if(!l)return;
  var cnt=function(s){return OB.filter(function(b){return b.status===s}).length};
- var tabs=[["await","Awaiting confirmation ("+cnt("awaiting_confirmation")+")"],["unpaid","Not paid yet ("+cnt("awaiting_payment")+")"],["confirmed","Confirmed"],["rejected","Rejected"],["all","All"]];
+ var tabs=[["await","Awaiting confirmation ("+cnt("awaiting_confirmation")+")"],["unpaid","Not paid yet ("+cnt("awaiting_payment")+")"],["confirmed","Confirmed ("+cnt("confirmed")+")"],["rejected","Rejected ("+cnt("rejected")+")"],["all","All"]];
  f.innerHTML=tabs.map(function(v){return '<button type="button" class="chip'+(OF===v[0]?' on':'')+'" data-f="'+v[0]+'" style="cursor:pointer;background:'+(OF===v[0]?'':'transparent')+'">'+v[1]+'</button>'}).join("");
  var m={await:"awaiting_confirmation",unpaid:"awaiting_payment",confirmed:"confirmed",rejected:"rejected"};
  var rows=OB.filter(function(b){return OF==="all"||b.status===m[OF]});
@@ -221,7 +225,7 @@ app.addEventListener("click",async function(e){var d,tg=e.target.closest("[data-
    else{var rf2=newRef();var full=Object.assign({uid:user.uid,ref:rf2,status:"awaiting_payment",createdAt:serverTimestamp()},data);var r=await addDoc(collection(db,"bookings"),full);S=Object.assign({id:r.id},full);watch(r.id)}
    go("pay")}catch(ex){err=x().err;render()}}
  else if(a==="cc")copy(CODE,tg,T.copied);
- else if(a==="paid"){try{await updateDoc(doc(db,"bookings",S.id),{status:"awaiting_confirmation",paidAt:serverTimestamp()});go("wait")}catch(ex){err=x().err;render()}}
+ else if(a==="paid"){try{await updateDoc(doc(db,"bookings",S.id),{status:"awaiting_confirmation",paidAt:serverTimestamp()});notifyOwner(S);go("wait")}catch(ex){err=x().err;render()}}
  else if(a==="edit"){if(S){D={svc:S.svc,name:S.name,conn:S.conn,lang:S.lang}}go("book")}
  else if(a==="resume"){go("pay")}
  else if(a==="home"){go("home")}
